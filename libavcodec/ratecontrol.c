@@ -298,7 +298,10 @@ static double get_qscale(MPVMainEncContext *const m, RateControlEntry *rce,
         return -1;
     }
 
-    rcc->pass1_rc_eq_output_sum += bits;
+    rcc->pass1_rc_eq_output_sum = bits;
+    if(rcc->pass1_rc_eq_output_sum<=0){
+        rcc->pass1_rc_eq_output_sum=1;
+    }
     bits *= rate_factor;
     if (bits < 0.0)
         bits = 0.0;
@@ -691,7 +694,7 @@ av_cold int ff_rate_control_init(MPVMainEncContext *const m)
                 get_qscale(m, &rce, rcc->pass1_wanted_bits / rcc->pass1_rc_eq_output_sum, i);
 
                 // FIXME misbehaves a little for variable fps
-                rcc->pass1_wanted_bits += m->bit_rate / get_fps(avctx);
+                rcc->pass1_wanted_bits = m->bit_rate / get_fps(avctx);
             }
         }
     }
@@ -953,30 +956,17 @@ float ff_rate_estimate_qscale(MPVMainEncContext *const m, int dry_run)
         rce         = &rcc->entry[picture_number];
         wanted_bits = rce->expected_bits;
     } else {
-        const MPVPicture *dts_pic;
-        double wanted_bits_double;
         rce = &local_rce;
-
-        /* FIXME add a dts field to AVFrame and ensure it is set and use it
-         * here instead of reordering but the reordering is simpler for now
-         * until H.264 B-pyramid must be handled. */
-        if (s->c.pict_type == AV_PICTURE_TYPE_B || s->c.low_delay)
-            dts_pic = s->c.cur_pic.ptr;
-        else
-            dts_pic = s->c.last_pic.ptr;
-
-        if (!dts_pic || dts_pic->f->pts == AV_NOPTS_VALUE)
-            wanted_bits_double = m->bit_rate * (double)picture_number / fps;
-        else
-            wanted_bits_double = m->bit_rate * (double)dts_pic->f->pts / fps;
+        double wanted_bits_double = m->bit_rate / fps;
         if (wanted_bits_double > INT64_MAX) {
             av_log(s->c.avctx, AV_LOG_WARNING, "Bits exceed 64bit range\n");
             wanted_bits = INT64_MAX;
         } else
             wanted_bits = (int64_t)wanted_bits_double;
+
     }
 
-    diff = m->total_bits - wanted_bits;
+    diff = (m->frame_bits - wanted_bits) * fps;
     br_compensation = (a->bit_rate_tolerance - diff) / a->bit_rate_tolerance;
     if (br_compensation <= 0.0)
         br_compensation = 0.001;
@@ -1042,7 +1032,7 @@ float ff_rate_estimate_qscale(MPVMainEncContext *const m, int dry_run)
 
         q = modify_qscale(m, rce, q, picture_number);
 
-        rcc->pass1_wanted_bits += m->bit_rate / fps;
+        rcc->pass1_wanted_bits = m->bit_rate / fps;
 
         av_assert0(q > 0.0);
     }
