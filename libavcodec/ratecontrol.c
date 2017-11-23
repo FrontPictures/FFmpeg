@@ -274,7 +274,10 @@ static double get_qscale(MpegEncContext *s, RateControlEntry *rce,
         return -1;
     }
 
-    rcc->pass1_rc_eq_output_sum += bits;
+    rcc->pass1_rc_eq_output_sum = bits;
+    if(rcc->pass1_rc_eq_output_sum<=0){
+        rcc->pass1_rc_eq_output_sum=1;
+    }
     bits *= rate_factor;
     if (bits < 0.0)
         bits = 0.0;
@@ -660,7 +663,7 @@ av_cold int ff_rate_control_init(MpegEncContext *s)
                 get_qscale(s, &rce, rcc->pass1_wanted_bits / rcc->pass1_rc_eq_output_sum, i);
 
                 // FIXME misbehaves a little for variable fps
-                rcc->pass1_wanted_bits += s->bit_rate / get_fps(s->avctx);
+                rcc->pass1_wanted_bits = s->bit_rate / get_fps(s->avctx);
             }
         }
     }
@@ -908,24 +911,11 @@ float ff_rate_estimate_qscale(MpegEncContext *s, int dry_run)
         rce         = &rcc->entry[picture_number];
         wanted_bits = rce->expected_bits;
     } else {
-        Picture *dts_pic;
         rce = &local_rce;
-
-        /* FIXME add a dts field to AVFrame and ensure it is set and use it
-         * here instead of reordering but the reordering is simpler for now
-         * until H.264 B-pyramid must be handled. */
-        if (s->pict_type == AV_PICTURE_TYPE_B || s->low_delay)
-            dts_pic = s->current_picture_ptr;
-        else
-            dts_pic = s->last_picture_ptr;
-
-        if (!dts_pic || dts_pic->f->pts == AV_NOPTS_VALUE)
-            wanted_bits = (uint64_t)(s->bit_rate * (double)picture_number / fps);
-        else
-            wanted_bits = (uint64_t)(s->bit_rate * (double)dts_pic->f->pts / fps);
+        wanted_bits = (uint64_t)(s->bit_rate / fps);
     }
 
-    diff = s->total_bits - wanted_bits;
+    diff = (s->frame_bits - wanted_bits)*fps;
     br_compensation = (a->bit_rate_tolerance - diff) / a->bit_rate_tolerance;
     if (br_compensation <= 0.0)
         br_compensation = 0.001;
@@ -991,7 +981,7 @@ float ff_rate_estimate_qscale(MpegEncContext *s, int dry_run)
 
         q = modify_qscale(s, rce, q, picture_number);
 
-        rcc->pass1_wanted_bits += s->bit_rate / fps;
+        rcc->pass1_wanted_bits = s->bit_rate / fps;
 
         av_assert0(q > 0.0);
     }
