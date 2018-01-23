@@ -276,6 +276,9 @@ static double get_qscale(MpegEncContext *s, RateControlEntry *rce,
     }
 
     rcc->pass1_rc_eq_output_sum = bits;
+    if(rcc->pass1_rc_eq_output_sum<=0){
+        rcc->pass1_rc_eq_output_sum=1;
+    }
     bits *= rate_factor;
     if (bits < 0.0)
         bits = 0.0;

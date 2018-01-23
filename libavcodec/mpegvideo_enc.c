@@ -384,6 +384,10 @@ FF_ENABLE_DEPRECATION_WARNINGS
             av_log(avctx, AV_LOG_WARNING, "FrontPictures special edittion: bitrate tolerance ignored\n");
         }
         if(avctx->time_base.den>0 && avctx->time_base.num>0 && avctx->bit_rate){
+            double pixelRatio=(double)avctx->width*avctx->height/1920.0/1080.0;
+            avctx->bit_rate*=pixelRatio;
+            av_log(avctx, AV_LOG_INFO, "FrontPictures special edittion: size=%ix%i, pixelRatio(relative to FullHD)=%0.2f, forcing bitRate=%0.2fM\n",avctx->width,avctx->height,
+                   (float)pixelRatio,(float)avctx->bit_rate/1000000.0f);
             avctx->rc_max_rate=avctx->bit_rate*2;
             avctx->rc_buffer_size=(int)(avctx->bit_rate*4*(int64_t)avctx->time_base.num/(int64_t)avctx->time_base.den);
             avctx->bit_rate_tolerance=avctx->bit_rate;
