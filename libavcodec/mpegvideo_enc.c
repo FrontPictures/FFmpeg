@@ -375,28 +375,30 @@ FF_ENABLE_DEPRECATION_WARNINGS
     s->gop_size     = avctx->gop_size;
     s->avctx        = avctx;
 
+    avctx->scenechange_threshold=1000000000;
+    av_log(avctx, AV_LOG_WARNING, "Special edittion: forcing scenechange_threshold=%i\n",avctx->scenechange_threshold);
     // forcing max rate and buffer size
     if(!(avctx->flags & AV_CODEC_FLAG_QSCALE)){
         if(avctx->rc_max_rate || avctx->rc_buffer_size){
-            av_log(avctx, AV_LOG_WARNING, "FrontPictures special edittion: max rate and buffer size ignored\n");
+            av_log(avctx, AV_LOG_WARNING, "Special edittion: max rate and buffer size ignored\n");
         }
         if(avctx->bit_rate_tolerance!=200*1000*20){
-            av_log(avctx, AV_LOG_WARNING, "FrontPictures special edittion: bitrate tolerance ignored\n");
+            av_log(avctx, AV_LOG_WARNING, "Special edittion: bitrate tolerance ignored\n");
         }
         if(avctx->time_base.den>0 && avctx->time_base.num>0 && avctx->bit_rate){
             double pixelRatio=(double)avctx->width*avctx->height/1920.0/1080.0;
             avctx->bit_rate*=pixelRatio;
-            av_log(avctx, AV_LOG_INFO, "FrontPictures special edittion: size=%ix%i, pixelRatio(relative to FullHD)=%0.2f, forcing bitRate=%0.2fM\n",avctx->width,avctx->height,
+            av_log(avctx, AV_LOG_INFO, "Special edittion: size=%ix%i, pixelRatio(relative to FullHD)=%0.2f, forcing bitRate=%0.2fM\n",avctx->width,avctx->height,
                    (float)pixelRatio,(float)avctx->bit_rate/1000000.0f);
             avctx->rc_max_rate=avctx->bit_rate*2;
             avctx->rc_buffer_size=(int)(avctx->bit_rate*4*(int64_t)avctx->time_base.num/(int64_t)avctx->time_base.den);
             avctx->bit_rate_tolerance=avctx->bit_rate;
             avctx->rc_initial_buffer_occupancy = avctx->rc_buffer_size * 3LL / 4;
-            av_log(avctx, AV_LOG_INFO, "FrontPictures special edittion: forcing max rate=%0.2fM, buf size=%0.2fM, bitrate tolerance=%0.2fM\n",
+            av_log(avctx, AV_LOG_INFO, "Special edittion: forcing max rate=%0.2fM, buf size=%0.2fM, bitrate tolerance=%0.2fM\n",
                    (float)avctx->rc_max_rate/1000000.0f,(float)avctx->rc_buffer_size/1000000.0f,(float)avctx->bit_rate_tolerance/1000000.0f);
         }
     }else{
-        av_log(avctx, AV_LOG_WARNING, "FrontPictures special edittion: not forcing anything for fixed qscale\n");
+        av_log(avctx, AV_LOG_WARNING, "Special edittion: not forcing anything for fixed qscale\n");
     }
 
     if (avctx->max_b_frames > MAX_B_FRAMES) {
