@@ -6,6 +6,8 @@ FATE_MOV = fate-mov-3elist \
            fate-mov-1elist-ends-last-bframe \
            fate-mov-2elist-elist1-ends-bframe \
            fate-mov-3elist-encrypted \
+           fate-mov-frag-encrypted \
+           fate-mov-tenc-only-encrypted \
            fate-mov-invalid-elst-entry-count \
            fate-mov-gpmf-remux \
            fate-mov-440hz-10ms \
@@ -13,12 +15,17 @@ FATE_MOV = fate-mov-3elist \
            fate-mov-elst-ends-betn-b-and-i \
            fate-mov-frag-overlap \
            fate-mov-bbi-elst-starts-b \
+           fate-mov-neg-firstpts-discard-frames \
 
-FATE_MOV_FFPROBE = fate-mov-aac-2048-priming \
+FATE_MOV_FFPROBE = fate-mov-neg-firstpts-discard \
+                   fate-mov-aac-2048-priming \
                    fate-mov-zombie \
                    fate-mov-init-nonkeyframe \
                    fate-mov-displaymatrix \
                    fate-mov-spherical-mono \
+                   fate-mov-guess-delay-1 \
+                   fate-mov-guess-delay-2 \
+                   fate-mov-guess-delay-3 \
 
 FATE_SAMPLES_AVCONV += $(FATE_MOV)
 FATE_SAMPLES_FFPROBE += $(FATE_MOV_FFPROBE)
@@ -33,6 +40,12 @@ fate-mov-3elist-1ctts: CMD = framemd5 -i $(TARGET_SAMPLES)/mov/mov-3elist-1ctts.
 
 # Edit list with encryption
 fate-mov-3elist-encrypted: CMD = framemd5 -decryption_key 12345678901234567890123456789012 -i $(TARGET_SAMPLES)/mov/mov-3elist-encrypted.mov
+
+# Fragmented encryption with senc boxes in movie fragments.
+fate-mov-frag-encrypted: CMD = framemd5 -decryption_key 12345678901234567890123456789012 -i $(TARGET_SAMPLES)/mov/mov-frag-encrypted.mp4
+
+# Full-sample encryption and constant IV using only tenc atom (no senc/saio/saiz).
+fate-mov-tenc-only-encrypted: CMD = framemd5 -decryption_key 12345678901234567890123456789012 -i $(TARGET_SAMPLES)/mov/mov-tenc-only-encrypted.mp4
 
 # Makes sure that the CTTS is also modified when we fix avindex in mov.c while parsing edit lists.
 fate-mov-elist-starts-ctts-2ndsample: CMD = framemd5 -i $(TARGET_SAMPLES)/mov/mov-elist-starts-ctts-2ndsample.mov
@@ -52,7 +65,7 @@ fate-mov-elst-ends-betn-b-and-i: CMD = framemd5 -i $(TARGET_SAMPLES)/mov/elst_en
 fate-mov-440hz-10ms: CMD = framemd5 -i $(TARGET_SAMPLES)/mov/440hz-10ms.m4a
 
 # Makes sure that we handle invalid edit list entry count correctly.
-fate-mov-invalid-elst-entry-count: CMD = framemd5 -flags +bitexact -i $(TARGET_SAMPLES)/mov/invalid_elst_entry_count.mov
+fate-mov-invalid-elst-entry-count: CMD = framemd5 -idct simple -flags +bitexact -i $(TARGET_SAMPLES)/mov/invalid_elst_entry_count.mov
 
 # Makes sure that 1st key-frame is picked when,
 #    i) One B-frame between 2 key-frames
@@ -67,7 +80,13 @@ fate-mov-frag-overlap: CMD = framemd5 -i $(TARGET_SAMPLES)/mov/frag_overlap.mp4
 # Makes sure that we pick the right frames according to edit list when there is no keyframe with PTS < edit list start.
 # For example, when video starts on a B-frame, and edit list starts on that B-frame too.
 # GOP structure : B B I in presentation order.
-fate-mov-bbi-elst-starts-b: CMD = framemd5 -flags +bitexact -i $(TARGET_SAMPLES)/h264/twofields_packet.mp4
+fate-mov-bbi-elst-starts-b: CMD = framemd5 -flags +bitexact -acodec aac_fixed -i $(TARGET_SAMPLES)/h264/twofields_packet.mp4
+
+# Makes sure that the stream start_time is not negative when the first packet is a DISCARD packet with negative timestamp.
+fate-mov-neg-firstpts-discard: CMD = run ffprobe$(PROGSSUF)$(EXESUF) -show_entries stream=start_time -bitexact $(TARGET_SAMPLES)/mov/mov_neg_first_pts_discard.mov
+
+# Makes sure that expected frames are generated for mov_neg_first_pts_discard.mov with -vsync 1
+fate-mov-neg-firstpts-discard-frames: CMD = framemd5 -flags +bitexact -i $(TARGET_SAMPLES)/mov/mov_neg_first_pts_discard.mov -vsync 1
 
 fate-mov-aac-2048-priming: CMD = run ffprobe$(PROGSSUF)$(EXESUF) -show_packets -print_format compact $(TARGET_SAMPLES)/mov/aac-2048-priming.mov
 
@@ -82,3 +101,7 @@ fate-mov-spherical-mono: CMD = run ffprobe$(PROGSSUF)$(EXESUF) -show_entries str
 fate-mov-gpmf-remux: CMD = md5 -i $(TARGET_SAMPLES)/mov/fake-gp-media-with-real-gpmf.mp4 -map 0 -c copy -fflags +bitexact -f mp4
 fate-mov-gpmf-remux: CMP = oneline
 fate-mov-gpmf-remux: REF = 8f48e435ee1f6b7e173ea756141eabf3
+
+fate-mov-guess-delay-1: CMD = run ffprobe$(PROGSSUF)$(EXESUF) -show_entries stream=has_b_frames -select_streams v $(TARGET_SAMPLES)/h264/h264_3bf_nopyramid_nobsrestriction.mp4
+fate-mov-guess-delay-2: CMD = run ffprobe$(PROGSSUF)$(EXESUF) -show_entries stream=has_b_frames -select_streams v $(TARGET_SAMPLES)/h264/h264_3bf_pyramid_nobsrestriction.mp4
+fate-mov-guess-delay-3: CMD = run ffprobe$(PROGSSUF)$(EXESUF) -show_entries stream=has_b_frames -select_streams v $(TARGET_SAMPLES)/h264/h264_4bf_pyramid_nobsrestriction.mp4

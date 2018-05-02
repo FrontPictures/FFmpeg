@@ -208,8 +208,10 @@ static int tcp_accept(URLContext *s, URLContext **c)
         return ret;
     cc = (*c)->priv_data;
     ret = ff_accept(sc->fd, sc->listen_timeout, s);
-    if (ret < 0)
+    if (ret < 0) {
+        ffurl_closep(c);
         return ret;
+    }
     cc->fd = ret;
     return 0;
 }
@@ -225,6 +227,8 @@ static int tcp_read(URLContext *h, uint8_t *buf, int size)
             return ret;
     }
     ret = recv(s->fd, buf, size, 0);
+    if (ret == 0)
+        return AVERROR_EOF;
     return ret < 0 ? ff_neterrno() : ret;
 }
 

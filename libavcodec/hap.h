@@ -84,6 +84,7 @@ typedef struct HapContext {
 
     int texture_count;      /* 2 for HAQA, 1 for other version */
     int texture_section_size; /* size of the part of the texture section (for HAPQA) */
+    int uncompress_pix_size; /* nb of byte / pixel for the target picture */
 
     /* Pointer to the selected compress or decompress function */
     int (*tex_fun)(uint8_t *dst, ptrdiff_t stride, const uint8_t *block);
@@ -101,5 +102,11 @@ int ff_hap_set_chunk_count(HapContext *ctx, int count, int first_in_frame);
  * Free resources associated with the context
  */
 av_cold void ff_hap_free_context(HapContext *ctx);
+
+/* The first three bytes are the size of the section past the header, or zero
+ * if the length is stored in the next long word. The fourth byte in the first
+ * long word indicates the type of the current section. */
+int ff_hap_parse_section_header(GetByteContext *gbc, int *section_size,
+                                enum HapSectionType *section_type);
 
 #endif /* AVCODEC_HAP_H */

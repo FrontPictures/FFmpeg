@@ -257,7 +257,7 @@ static const AVPixFmtDescriptor av_pix_fmt_descriptors[AV_PIX_FMT_NB] = {
         .comp = {
             { 0, 1, 0, 0, 8, 0, 7, 1 },        /* Y */
         },
-        .flags = AV_PIX_FMT_FLAG_PSEUDOPAL,
+        .flags = FF_PSEUDOPAL,
         .alias = "gray8,y8",
     },
     [AV_PIX_FMT_MONOWHITE] = {
@@ -288,7 +288,7 @@ static const AVPixFmtDescriptor av_pix_fmt_descriptors[AV_PIX_FMT_NB] = {
         .comp = {
             { 0, 1, 0, 0, 8, 0, 7, 1 },
         },
-        .flags = AV_PIX_FMT_FLAG_PAL,
+        .flags = AV_PIX_FMT_FLAG_PAL | AV_PIX_FMT_FLAG_ALPHA,
     },
     [AV_PIX_FMT_YUVJ420P] = {
         .name = "yuvj420p",
@@ -362,7 +362,7 @@ static const AVPixFmtDescriptor av_pix_fmt_descriptors[AV_PIX_FMT_NB] = {
             { 0, 1, 0, 3, 3, 0, 2, 1 },        /* G */
             { 0, 1, 0, 6, 2, 0, 1, 1 },        /* B */
         },
-        .flags = AV_PIX_FMT_FLAG_RGB | AV_PIX_FMT_FLAG_PSEUDOPAL,
+        .flags = AV_PIX_FMT_FLAG_RGB | FF_PSEUDOPAL,
     },
     [AV_PIX_FMT_BGR4] = {
         .name = "bgr4",
@@ -386,7 +386,7 @@ static const AVPixFmtDescriptor av_pix_fmt_descriptors[AV_PIX_FMT_NB] = {
             { 0, 1, 0, 1, 2, 0, 1, 1 },        /* G */
             { 0, 1, 0, 3, 1, 0, 0, 1 },        /* B */
         },
-        .flags = AV_PIX_FMT_FLAG_RGB | AV_PIX_FMT_FLAG_PSEUDOPAL,
+        .flags = AV_PIX_FMT_FLAG_RGB | FF_PSEUDOPAL,
     },
     [AV_PIX_FMT_RGB8] = {
         .name = "rgb8",
@@ -398,7 +398,7 @@ static const AVPixFmtDescriptor av_pix_fmt_descriptors[AV_PIX_FMT_NB] = {
             { 0, 1, 0, 3, 3, 0, 2, 1 },        /* G */
             { 0, 1, 0, 0, 3, 0, 2, 1 },        /* B */
         },
-        .flags = AV_PIX_FMT_FLAG_RGB | AV_PIX_FMT_FLAG_PSEUDOPAL,
+        .flags = AV_PIX_FMT_FLAG_RGB | FF_PSEUDOPAL,
     },
     [AV_PIX_FMT_RGB4] = {
         .name = "rgb4",
@@ -422,7 +422,7 @@ static const AVPixFmtDescriptor av_pix_fmt_descriptors[AV_PIX_FMT_NB] = {
             { 0, 1, 0, 1, 2, 0, 1, 1 },        /* G */
             { 0, 1, 0, 0, 1, 0, 0, 1 },        /* B */
         },
-        .flags = AV_PIX_FMT_FLAG_RGB | AV_PIX_FMT_FLAG_PSEUDOPAL,
+        .flags = AV_PIX_FMT_FLAG_RGB | FF_PSEUDOPAL,
     },
     [AV_PIX_FMT_NV12] = {
         .name = "nv12",
@@ -2181,6 +2181,10 @@ static const AVPixFmtDescriptor av_pix_fmt_descriptors[AV_PIX_FMT_NB] = {
         .name = "drm_prime",
         .flags = AV_PIX_FMT_FLAG_HWACCEL,
     },
+    [AV_PIX_FMT_OPENCL] = {
+        .name  = "opencl",
+        .flags = AV_PIX_FMT_FLAG_HWACCEL,
+    },
 };
 #if FF_API_PLUS1_MINUS1
 FF_ENABLE_DEPRECATION_WARNINGS
@@ -2428,7 +2432,6 @@ void ff_check_pixfmt_descriptors(void){
         av_assert0(d->log2_chroma_h <= 3);
         av_assert0(d->nb_components <= 4);
         av_assert0(d->name && d->name[0]);
-        av_assert0((d->nb_components==4 || d->nb_components==2) == !!(d->flags & AV_PIX_FMT_FLAG_ALPHA));
         av_assert2(av_get_pix_fmt(d->name) == i);
 
         for (j=0; j<FF_ARRAY_ELEMS(d->comp); j++) {
@@ -2479,7 +2482,7 @@ enum AVPixelFormat av_pix_fmt_swap_endianness(enum AVPixelFormat pix_fmt)
 #define FF_COLOR_XYZ      4
 
 #define pixdesc_has_alpha(pixdesc) \
-    ((pixdesc)->nb_components == 2 || (pixdesc)->nb_components == 4 || (pixdesc)->flags & AV_PIX_FMT_FLAG_PAL)
+    ((pixdesc)->flags & AV_PIX_FMT_FLAG_ALPHA)
 
 
 static int get_color_type(const AVPixFmtDescriptor *desc) {

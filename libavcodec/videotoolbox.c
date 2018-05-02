@@ -45,8 +45,10 @@ enum { kCMVideoCodecType_HEVC = 'hvc1' };
 
 static void videotoolbox_buffer_release(void *opaque, uint8_t *data)
 {
-    CVPixelBufferRef cv_buffer = (CVImageBufferRef)data;
+    CVPixelBufferRef cv_buffer = *(CVPixelBufferRef *)data;
     CVPixelBufferRelease(cv_buffer);
+
+    av_free(data);
 }
 
 static int videotoolbox_buffer_copy(VTContext *vtctx,
@@ -69,19 +71,47 @@ static int videotoolbox_buffer_copy(VTContext *vtctx,
     return 0;
 }
 
+static int videotoolbox_postproc_frame(void *avctx, AVFrame *frame)
+{
+    CVPixelBufferRef ref = *(CVPixelBufferRef *)frame->buf[0]->data;
+
+    if (!ref) {
+        av_log(avctx, AV_LOG_ERROR, "No frame decoded?\n");
+        av_frame_unref(frame);
+        return AVERROR_EXTERNAL;
+    }
+
+    frame->data[3] = (uint8_t*)ref;
+
+    return 0;
+}
+
 int ff_videotoolbox_alloc_frame(AVCodecContext *avctx, AVFrame *frame)
 {
+    size_t      size = sizeof(CVPixelBufferRef);
+    uint8_t    *data = NULL;
+    AVBufferRef *buf = NULL;
     int ret = ff_attach_decode_data(frame);
+    FrameDecodeData *fdd;
     if (ret < 0)
         return ret;
+
+    data = av_mallocz(size);
+    if (!data)
+        return AVERROR(ENOMEM);
+    buf = av_buffer_create(data, size, videotoolbox_buffer_release, NULL, 0);
+    if (!buf) {
+        av_freep(&data);
+        return AVERROR(ENOMEM);
+    }
+    frame->buf[0] = buf;
+
+    fdd = (FrameDecodeData*)frame->private_ref->data;
+    fdd->post_process = videotoolbox_postproc_frame;
 
     frame->width  = avctx->width;
     frame->height = avctx->height;
     frame->format = avctx->pix_fmt;
-    frame->buf[0] = av_buffer_alloc(1);
-
-    if (!frame->buf[0])
-        return AVERROR(ENOMEM);
 
     return 0;
 }
@@ -119,7 +149,8 @@ CFDataRef ff_videotoolbox_avcc_extradata_create(AVCodecContext *avctx)
 
     // save sps header (profile/level) used to create decoder session,
     // so we can detect changes and recreate it.
-    memcpy(vtctx->sps, h->ps.sps->data + 1, 3);
+    if (vtctx)
+        memcpy(vtctx->sps, h->ps.sps->data + 1, 3);
 
     data = CFDataCreate(kCFAllocatorDefault, vt_extradata, vt_extradata_size);
     av_free(vt_extradata);
@@ -284,20 +315,21 @@ CFDataRef ff_videotoolbox_hvcc_extradata_create(AVCodecContext *avctx)
     return data;
 }
 
-int ff_videotoolbox_buffer_create(VTContext *vtctx, AVFrame *frame)
+static int videotoolbox_set_frame(AVCodecContext *avctx, AVFrame *frame)
 {
-    av_buffer_unref(&frame->buf[0]);
-
-    frame->buf[0] = av_buffer_create((uint8_t*)vtctx->frame,
-                                     sizeof(vtctx->frame),
-                                     videotoolbox_buffer_release,
-                                     NULL,
-                                     AV_BUFFER_FLAG_READONLY);
-    if (!frame->buf[0]) {
-        return AVERROR(ENOMEM);
+    VTContext *vtctx = avctx->internal->hwaccel_priv_data;
+    if (!frame->buf[0] || frame->data[3]) {
+        av_log(avctx, AV_LOG_ERROR, "videotoolbox: invalid state\n");
+        av_frame_unref(frame);
+        return AVERROR_EXTERNAL;
     }
 
-    frame->data[3] = (uint8_t*)vtctx->frame;
+    CVPixelBufferRef *ref = (CVPixelBufferRef *)frame->buf[0]->data;
+
+    if (*ref)
+        CVPixelBufferRelease(*ref);
+
+    *ref = vtctx->frame;
     vtctx->frame = NULL;
 
     return 0;
@@ -323,6 +355,11 @@ static int videotoolbox_h264_decode_params(AVCodecContext *avctx,
                                            uint32_t size)
 {
     VTContext *vtctx = avctx->internal->hwaccel_priv_data;
+    H264Context *h = avctx->priv_data;
+
+    // save sps header (profile/level) used to create decoder session
+    if (!vtctx->sps[0])
+        memcpy(vtctx->sps, h->ps.sps->data + 1, 3);
 
     if (type == H264_NAL_SPS) {
         if (size > 4 && memcmp(vtctx->sps, buffer + 1, 3) != 0) {
@@ -400,7 +437,7 @@ static int videotoolbox_buffer_create(AVCodecContext *avctx, AVFrame *frame)
     AVHWFramesContext *cached_frames;
     int ret;
 
-    ret = ff_videotoolbox_buffer_create(vtctx, frame);
+    ret = videotoolbox_set_frame(avctx, frame);
     if (ret < 0)
         return ret;
 
@@ -1028,7 +1065,7 @@ static int videotoolbox_frame_params(AVCodecContext *avctx,
     return 0;
 }
 
-AVHWAccel ff_h263_videotoolbox_hwaccel = {
+const AVHWAccel ff_h263_videotoolbox_hwaccel = {
     .name           = "h263_videotoolbox",
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_H263,
@@ -1043,7 +1080,7 @@ AVHWAccel ff_h263_videotoolbox_hwaccel = {
     .priv_data_size = sizeof(VTContext),
 };
 
-AVHWAccel ff_hevc_videotoolbox_hwaccel = {
+const AVHWAccel ff_hevc_videotoolbox_hwaccel = {
     .name           = "hevc_videotoolbox",
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_HEVC,
@@ -1059,7 +1096,7 @@ AVHWAccel ff_hevc_videotoolbox_hwaccel = {
     .priv_data_size = sizeof(VTContext),
 };
 
-AVHWAccel ff_h264_videotoolbox_hwaccel = {
+const AVHWAccel ff_h264_videotoolbox_hwaccel = {
     .name           = "h264_videotoolbox",
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_H264,
@@ -1075,7 +1112,7 @@ AVHWAccel ff_h264_videotoolbox_hwaccel = {
     .priv_data_size = sizeof(VTContext),
 };
 
-AVHWAccel ff_mpeg1_videotoolbox_hwaccel = {
+const AVHWAccel ff_mpeg1_videotoolbox_hwaccel = {
     .name           = "mpeg1_videotoolbox",
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_MPEG1VIDEO,
@@ -1090,7 +1127,7 @@ AVHWAccel ff_mpeg1_videotoolbox_hwaccel = {
     .priv_data_size = sizeof(VTContext),
 };
 
-AVHWAccel ff_mpeg2_videotoolbox_hwaccel = {
+const AVHWAccel ff_mpeg2_videotoolbox_hwaccel = {
     .name           = "mpeg2_videotoolbox",
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_MPEG2VIDEO,
@@ -1105,7 +1142,7 @@ AVHWAccel ff_mpeg2_videotoolbox_hwaccel = {
     .priv_data_size = sizeof(VTContext),
 };
 
-AVHWAccel ff_mpeg4_videotoolbox_hwaccel = {
+const AVHWAccel ff_mpeg4_videotoolbox_hwaccel = {
     .name           = "mpeg4_videotoolbox",
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_MPEG4,
