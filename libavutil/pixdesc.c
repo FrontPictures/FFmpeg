@@ -611,6 +611,27 @@ static const AVPixFmtDescriptor av_pix_fmt_descriptors[AV_PIX_FMT_NB] = {
         },
         .alias = "y12le",
     },
+    [AV_PIX_FMT_GRAY14BE] = {
+        .name = "gray14be",
+        .nb_components = 1,
+        .log2_chroma_w = 0,
+        .log2_chroma_h = 0,
+        .comp = {
+            { 0, 2, 0, 0, 14, 1, 13, 1 },       /* Y */
+        },
+        .flags = AV_PIX_FMT_FLAG_BE,
+        .alias = "y14be",
+    },
+    [AV_PIX_FMT_GRAY14LE] = {
+        .name = "gray14le",
+        .nb_components = 1,
+        .log2_chroma_w = 0,
+        .log2_chroma_h = 0,
+        .comp = {
+            { 0, 2, 0, 0, 14, 1, 13, 1 },       /* Y */
+        },
+        .alias = "y14le",
+    },
     [AV_PIX_FMT_GRAY16BE] = {
         .name = "gray16be",
         .nb_components = 1,
@@ -2716,7 +2737,12 @@ int av_color_primaries_from_name(const char *name)
     int i;
 
     for (i = 0; i < FF_ARRAY_ELEMS(color_primaries_names); i++) {
-        size_t len = strlen(color_primaries_names[i]);
+        size_t len;
+
+        if (!color_primaries_names[i])
+            continue;
+
+        len = strlen(color_primaries_names[i]);
         if (!strncmp(color_primaries_names[i], name, len))
             return i;
     }
@@ -2735,7 +2761,12 @@ int av_color_transfer_from_name(const char *name)
     int i;
 
     for (i = 0; i < FF_ARRAY_ELEMS(color_transfer_names); i++) {
-        size_t len = strlen(color_transfer_names[i]);
+        size_t len;
+
+        if (!color_transfer_names[i])
+            continue;
+
+        len = strlen(color_transfer_names[i]);
         if (!strncmp(color_transfer_names[i], name, len))
             return i;
     }
@@ -2754,7 +2785,12 @@ int av_color_space_from_name(const char *name)
     int i;
 
     for (i = 0; i < FF_ARRAY_ELEMS(color_space_names); i++) {
-        size_t len = strlen(color_space_names[i]);
+        size_t len;
+
+        if (!color_space_names[i])
+            continue;
+
+        len = strlen(color_space_names[i]);
         if (!strncmp(color_space_names[i], name, len))
             return i;
     }
@@ -2773,7 +2809,12 @@ int av_chroma_location_from_name(const char *name)
     int i;
 
     for (i = 0; i < FF_ARRAY_ELEMS(chroma_location_names); i++) {
-        size_t len = strlen(chroma_location_names[i]);
+        size_t len;
+
+        if (!chroma_location_names[i])
+            continue;
+
+        len = strlen(chroma_location_names[i]);
         if (!strncmp(chroma_location_names[i], name, len))
             return i;
     }

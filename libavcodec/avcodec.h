@@ -637,6 +637,7 @@ enum AVCodecID {
     AV_CODEC_ID_APTX,
     AV_CODEC_ID_APTX_HD,
     AV_CODEC_ID_SBC,
+    AV_CODEC_ID_ATRAC9,
 
     /* subtitle codecs */
     AV_CODEC_ID_FIRST_SUBTITLE = 0x17000,          ///< A dummy ID pointing at the start of subtitle codecs.
@@ -665,6 +666,7 @@ enum AVCodecID {
     AV_CODEC_ID_PJS,
     AV_CODEC_ID_ASS,
     AV_CODEC_ID_HDMV_TEXT_SUBTITLE,
+    AV_CODEC_ID_TTML,
 
     /* other specific kind of codecs (generally used for attachments) */
     AV_CODEC_ID_FIRST_UNKNOWN = 0x18000,           ///< A dummy ID pointing at the start of various fake codecs.

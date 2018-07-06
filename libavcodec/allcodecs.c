@@ -392,6 +392,7 @@ extern AVCodec ff_atrac3_decoder;
 extern AVCodec ff_atrac3al_decoder;
 extern AVCodec ff_atrac3p_decoder;
 extern AVCodec ff_atrac3pal_decoder;
+extern AVCodec ff_atrac9_decoder;
 extern AVCodec ff_binkaudio_dct_decoder;
 extern AVCodec ff_binkaudio_rdft_decoder;
 extern AVCodec ff_bmv_audio_decoder;
@@ -760,7 +761,15 @@ extern AVCodec ff_vp9_cuvid_decoder;
 extern AVCodec ff_vp9_mediacodec_decoder;
 extern AVCodec ff_vp9_vaapi_encoder;
 
+// The iterate API is not usable with ossfuzz due to the excessive size of binaries created
+#if CONFIG_OSSFUZZ
+AVCodec * codec_list[] = {
+    NULL,
+    NULL
+};
+#else
 #include "libavcodec/codec_list.c"
+#endif
 
 static AVOnce av_codec_static_init = AV_ONCE_INIT;
 static void av_codec_init_static(void)
