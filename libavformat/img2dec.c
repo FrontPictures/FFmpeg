@@ -113,21 +113,101 @@ static int find_image_range(AVIOContext *pb, int *pfirst_index, int *plast_index
     int range, last_index, range1, first_index;
 
     /* find the first image */
-    for (first_index = start_index; first_index < start_index + start_index_range; first_index++) {
+    /* we will test for first 5 numbers. If not found, we will use more/less logic to find first frame */
+
+    int first_found=0;
+
+    av_log(0, AV_LOG_VERBOSE, "Looking for first image. start_number=%i, range=%i, path=%s\n",start_index,start_index_range,path);
+    for (first_index = start_index; first_index < start_index + start_index_range
+         && first_index < start_index + 5;
+         first_index++) {
+        av_log(0, AV_LOG_VERBOSE, "Testing number %i\n",first_index);
         if (av_get_frame_filename(buf, sizeof(buf), path, first_index) < 0) {
+            av_log(0, AV_LOG_VERBOSE, "av_get_frame_filename failed\n");
             *pfirst_index =
             *plast_index  = 1;
             if (pb || avio_check(buf, AVIO_FLAG_READ) > 0)
                 return 0;
             return -1;
         }
-        if (avio_check(buf, AVIO_FLAG_READ) > 0)
+        if (avio_check(buf, AVIO_FLAG_READ) > 0){
+            av_log(0, AV_LOG_VERBOSE, "Found first number: %i\n", first_index);
+            first_found=1;
             break;
+        }
     }
-    if (first_index == start_index + start_index_range)
+
+    if (first_index == start_index + start_index_range){
+        av_log(0, AV_LOG_VERBOSE, "All numbers in range tested. First number not found\n");
         goto fail;
+    }
+
+    if(first_found==0){
+        av_log(0, AV_LOG_VERBOSE, "Looking for at least one existing image in range\n");
+        int imin=first_index;
+        int imax=start_index + start_index_range;
+        for(int steps=10;steps<=10000;steps*=10){
+            int step=(imax-imin)/steps;
+            if(step==0){
+                break;
+            }
+            av_log(0, AV_LOG_VERBOSE, "steps=%i, step=%i\n",steps,step);
+            int foundSome=0;
+            for(int n=imin; n<=imax;n+=step){
+                if(av_get_frame_filename(buf, sizeof(buf), path, n)<0){
+                    goto fail;
+                }
+                if (avio_check(buf, AVIO_FLAG_READ) > 0){
+                    av_log(0, AV_LOG_VERBOSE, "testing %i - found\n",n);
+                    foundSome=1;
+                    if(n>imin){
+                        imin=n-step;
+                    }
+                }else{
+                    av_log(0, AV_LOG_VERBOSE, "testing %i - not found\n",n);
+                    if(foundSome>0){
+                        imax=n;
+                        break;
+                    }
+                }
+            }
+            if(foundSome>0){
+                break;
+            }
+        }
+        av_log(0, AV_LOG_VERBOSE, "Starting more/less jumps\n");
+        while(1){
+            if(imin==imax){
+                av_log(0, AV_LOG_VERBOSE, "min/max jumps finished\n");
+                break;
+            }
+            first_index=imin+(imax-imin)/2;
+            av_log(0, AV_LOG_VERBOSE, "min=%i, max=%i, testing=%i\n",imin,imax,first_index);
+            if(av_get_frame_filename(buf, sizeof(buf), path, first_index)<0){
+                goto fail;
+            }
+            if (avio_check(buf, AVIO_FLAG_READ) > 0){
+                first_found=1;
+                imax=first_index;
+                av_log(0, AV_LOG_VERBOSE, "found. Setting max=%i\n",imax);
+            }else{
+                first_index+=1;
+                imin=first_index;
+                av_log(0, AV_LOG_VERBOSE, "not found. Setting min=%i\n",imin);
+            }
+        }
+        if(first_found){
+            av_log(0, AV_LOG_VERBOSE, "first index found: %i\n",first_index);
+        }
+    }
+    if(first_found==0){
+        av_log(0, AV_LOG_VERBOSE, "file not found\n");
+        goto fail;
+    }
+
 
     /* find the last image */
+    av_log(0, AV_LOG_VERBOSE, "Looking for last index\n");
     last_index = first_index;
     for (;;) {
         range = 0;
@@ -139,8 +219,12 @@ static int find_image_range(AVIOContext *pb, int *pfirst_index, int *plast_index
             if (av_get_frame_filename(buf, sizeof(buf), path,
                                       last_index + range1) < 0)
                 goto fail;
-            if (avio_check(buf, AVIO_FLAG_READ) <= 0)
+            if (avio_check(buf, AVIO_FLAG_READ) <= 0){
+                av_log(0, AV_LOG_VERBOSE, "testing %i - not found\n",last_index + range1);
                 break;
+            }else{
+                av_log(0, AV_LOG_VERBOSE, "testing %i - found\n",last_index + range1);
+            }
             range = range1;
             /* just in case... */
             if (range >= (1 << 30))
@@ -153,6 +237,7 @@ static int find_image_range(AVIOContext *pb, int *pfirst_index, int *plast_index
     }
     *pfirst_index = first_index;
     *plast_index  = last_index;
+    av_log(0, AV_LOG_VERBOSE, "Final first index=%i, last index=%i\n",first_index,last_index);
     return 0;
 
 fail:
