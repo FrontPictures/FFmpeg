@@ -111,6 +111,12 @@ static int find_image_range(AVIOContext *pb, int *pfirst_index, int *plast_index
 {
     char buf[1024];
     int range, last_index, range1, first_index;
+    int imin;
+    int imax;
+    int foundSome;
+    int n;
+    int steps;
+    int step;
 
     /* find the first image */
     /* we will test for first 5 numbers. If not found, we will use more/less logic to find first frame */
@@ -144,16 +150,16 @@ static int find_image_range(AVIOContext *pb, int *pfirst_index, int *plast_index
 
     if(first_found==0){
         av_log(0, AV_LOG_VERBOSE, "Looking for at least one existing image in range\n");
-        int imin=first_index;
-        int imax=start_index + start_index_range;
-        for(int steps=10;steps<=10000;steps*=10){
-            int step=(imax-imin)/steps;
+        imin=first_index;
+        imax=start_index + start_index_range;
+        for(steps=10;steps<=10000;steps*=10){
+            step=(imax-imin)/steps;
             if(step==0){
                 break;
             }
             av_log(0, AV_LOG_VERBOSE, "steps=%i, step=%i\n",steps,step);
-            int foundSome=0;
-            for(int n=imin; n<=imax;n+=step){
+            foundSome=0;
+            for(n=imin; n<=imax;n+=step){
                 if(av_get_frame_filename(buf, sizeof(buf), path, n)<0){
                     goto fail;
                 }
