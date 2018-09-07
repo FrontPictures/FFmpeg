@@ -159,10 +159,10 @@ static int find_image_range(AVIOContext *pb, int *pfirst_index, int *plast_index
                 }
                 if (avio_check(buf, AVIO_FLAG_READ) > 0){
                     av_log(0, AV_LOG_VERBOSE, "testing %i - found\n",n);
-                    foundSome=1;
-                    if(n>imin){
+                    if(foundSome==0 && n>imin){
                         imin=n-step;
                     }
+                    foundSome=1;
                 }else{
                     av_log(0, AV_LOG_VERBOSE, "testing %i - not found\n",n);
                     if(foundSome>0){
