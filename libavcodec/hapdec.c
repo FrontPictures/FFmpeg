@@ -322,8 +322,14 @@ static int hap_decode(AVCodecContext *avctx, AVFrame *frame,
         }
 
         ctx->dec[t].frame_data.out = frame->data[0];
-        ctx->dec[t].stride = frame->linesize[0];
-        avctx->execute2(avctx, ff_texturedsp_decompress_thread, &ctx->dec[t], NULL, ctx->dec[t].slice_count);
+        ctx->dec[t].stride = frame->linesize[0];        
+
+        if (ctx->s3tc == 0) {
+            avctx->execute2(avctx, ff_texturedsp_decompress_thread, &ctx->dec[t], NULL, ctx->dec[t].slice_count);
+        }
+        else {
+            memcpy(frame->data[t], ctx->tex_buf, ctx->tex_size);
+        }
     }
 
     /* Frame is ready to be output */
@@ -357,31 +363,37 @@ static av_cold int hap_init(AVCodecContext *avctx)
     ctx->dec[0].slice_count = av_clip(avctx->thread_count, 1,
                                       avctx->coded_height / TEXTURE_BLOCK_H);
 
+    enum AVPixelFormat sw_pix_fmt = AV_PIX_FMT_NONE;
+    enum AVPixelFormat hw_pix_fmt = AV_PIX_FMT_NONE;
+
     switch (avctx->codec_tag) {
     case MKTAG('H','a','p','1'):
         texture_name = "DXT1";
         ctx->dec[0].tex_ratio = 8;
-        ctx->dec[0].tex_funct = ctx->dxtc.dxt1_block;
-        avctx->pix_fmt = AV_PIX_FMT_RGB0;
+        ctx->dec[0].tex_funct = ctx->dxtc.dxt1_block;        
+        sw_pix_fmt = AV_PIX_FMT_RGB0;
+        hw_pix_fmt = AV_PIX_FMT_GL_DXT1;
         break;
     case MKTAG('H','a','p','5'):
         texture_name = "DXT5";
         ctx->dec[0].tex_ratio = 16;
         ctx->dec[0].tex_funct = ctx->dxtc.dxt5_block;
-        avctx->pix_fmt = AV_PIX_FMT_RGBA;
+        sw_pix_fmt = AV_PIX_FMT_RGBA;
+        hw_pix_fmt = AV_PIX_FMT_GL_DXT5;
         break;
     case MKTAG('H','a','p','Y'):
         texture_name = "DXT5-YCoCg-scaled";
         ctx->dec[0].tex_ratio = 16;
         ctx->dec[0].tex_funct = ctx->dxtc.dxt5ys_block;
-        avctx->pix_fmt = AV_PIX_FMT_RGB0;
+        sw_pix_fmt = AV_PIX_FMT_RGB0;
+        hw_pix_fmt = AV_PIX_FMT_GL_DXT5_YCoCg;
         break;
     case MKTAG('H','a','p','A'):
         texture_name = "RGTC1";
         ctx->dec[0].tex_ratio = 8;
         ctx->dec[0].tex_funct = ctx->dxtc.rgtc1u_gray_block;
         ctx->dec[0].raw_ratio = 4;
-        avctx->pix_fmt = AV_PIX_FMT_GRAY8;
+        sw_pix_fmt = AV_PIX_FMT_GRAY8;
         break;
     case MKTAG('H','a','p','M'):
         texture_name  = "DXT5-YCoCg-scaled / RGTC1";
@@ -391,11 +403,20 @@ static av_cold int hap_init(AVCodecContext *avctx)
         ctx->dec[1].tex_funct = ctx->dxtc.rgtc1u_alpha_block;
         ctx->dec[1].raw_ratio = 16;
         ctx->dec[1].slice_count = ctx->dec[0].slice_count;
-        avctx->pix_fmt = AV_PIX_FMT_RGBA;
+        sw_pix_fmt = AV_PIX_FMT_RGBA;
+        hw_pix_fmt = AV_PIX_FMT_GL_DXT5_YCoCg_RGTC1;        
         ctx->texture_count = 2;
         break;
     default:
         return AVERROR_DECODER_NOT_FOUND;
+    }
+
+    if (ctx->s3tc == 1 && hw_pix_fmt != AV_PIX_FMT_NONE) {
+        avctx->pix_fmt = hw_pix_fmt;
+    }
+    else {
+        avctx->pix_fmt = sw_pix_fmt;
+        ctx->s3tc = 0;
     }
 
     av_log(avctx, AV_LOG_DEBUG, "%s texture\n", texture_name);
@@ -412,11 +433,27 @@ static av_cold int hap_close(AVCodecContext *avctx)
     return 0;
 }
 
+#define OFFSET(x) offsetof(HapContext, x)
+#define VE AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_DECODING_PARAM
+
+const AVOption options[] = {
+    { "s3tc","1: get S3TC compressed texture, 0: use libav decompressing software implementation ", OFFSET(s3tc), AV_OPT_TYPE_INT64, {.i64 = 0 }, 0, 1, VE},
+    { NULL }
+};
+
+static const AVClass hap_class = {
+    .class_name = "hap",
+    .item_name = av_default_item_name,
+    .option = options,
+    .version = LIBAVUTIL_VERSION_INT,
+};
+
 const FFCodec ff_hap_decoder = {
     .p.name         = "hap",
     .p.long_name    = NULL_IF_CONFIG_SMALL("Vidvox Hap"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_HAP,
+    .p.priv_class   = &hap_class,
     .init           = hap_init,
     FF_CODEC_DECODE_CB(hap_decode),
     .close          = hap_close,

@@ -2491,6 +2491,47 @@ static const AVPixFmtDescriptor av_pix_fmt_descriptors[AV_PIX_FMT_NB] = {
         },
         .flags = AV_PIX_FMT_FLAG_PLANAR,
     },
+    [AV_PIX_FMT_GL_DXT1] = {
+        .name = "dxt1",
+        .nb_components = 1,
+        .log2_chroma_w = 0,
+        .log2_chroma_h = 0,
+        .comp = {
+            { 0, 4, 0, 4, 4},        /* Y */
+        },
+        .flags = AV_PIX_FMT_FLAG_BITSTREAM,
+    },
+    [AV_PIX_FMT_GL_DXT5_YCoCg] = {
+        .name = "dxt5ycocg",
+        .nb_components = 1,
+        .log2_chroma_w = 0,
+        .log2_chroma_h = 0,
+        .comp = {
+            { 0, 8, 0, 0, 8},        /* Y */
+        },
+        .flags = AV_PIX_FMT_FLAG_BITSTREAM,
+    },
+    [AV_PIX_FMT_GL_DXT5_YCoCg_RGTC1] = {
+        .name = "dxt5ycocgrgtc1",
+        .nb_components = 2,
+        .log2_chroma_w = 0,
+        .log2_chroma_h = 0,
+        .comp = {
+            { 0, 8, 0, 0, 8 },        /* DXT5 */
+            { 1, 4, 0, 4, 4 },        /* RGTC1 */
+        },
+        .flags = AV_PIX_FMT_FLAG_BITSTREAM,
+    },
+    [AV_PIX_FMT_GL_DXT5] = {
+        .name = "dxt5",
+        .nb_components = 2,
+        .log2_chroma_w = 0,
+        .log2_chroma_h = 0,
+        .comp = {
+            { 0, 8, 0, 0, 8 },        /* DXT5 */
+        },
+        .flags = AV_PIX_FMT_FLAG_BITSTREAM,
+        },
 };
 
 static const char * const color_range_names[] = {
