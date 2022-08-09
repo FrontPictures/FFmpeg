@@ -347,8 +347,8 @@ av_cold int ff_mpv_encode_init(AVCodecContext *avctx)
     s->gop_size     = avctx->gop_size;
     s->avctx        = avctx;
 
-    avctx->scenechange_threshold=1000000000;
-    av_log(avctx, AV_LOG_WARNING, "FrontPictures special edittion: forcing scenechange_threshold=%i\n",avctx->scenechange_threshold);
+    s->scenechange_threshold=1000000000;
+    av_log(avctx, AV_LOG_WARNING, "FrontPictures special edittion: forcing scenechange_threshold=%i\n",s->scenechange_threshold);
     // forcing max rate and buffer size
     if(!(avctx->flags & AV_CODEC_FLAG_QSCALE)){
         if(avctx->rc_max_rate || avctx->rc_buffer_size){
