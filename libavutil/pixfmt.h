@@ -376,6 +376,7 @@ enum AVPixelFormat {
     AV_PIX_FMT_GL_DXT5,             ///< DXT5 RGBA
     AV_PIX_FMT_GL_DXT5_YCoCg,       ///< DXT5 YCoCg
     AV_PIX_FMT_GL_DXT5_YCoCg_RGTC1, ///< DXT5 YCoCg with RGTC1 alpha, data[0] points to DXT5, data[1] to RGTC1
+    AV_PIX_FMT_NOTCHLC,             ///< NotchLC compressed buffer, data[0] points to buffer, linesize[0] is buffer size
 
     AV_PIX_FMT_NB         ///< number of pixel formats, DO NOT USE THIS if you want to link with shared libav* because the number of formats might differ between versions
 };

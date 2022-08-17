@@ -32,8 +32,12 @@
 #include "internal.h"
 #include "lzf.h"
 #include "thread.h"
+#include "libavutil/opt.h"
 
 typedef struct NotchLCContext {
+    AVClass* class;
+    int64_t out_notch;
+
     unsigned compressed_size;
     unsigned format;
 
@@ -63,7 +67,14 @@ typedef struct NotchLCContext {
 
 static av_cold int decode_init(AVCodecContext *avctx)
 {
-    avctx->pix_fmt = AV_PIX_FMT_YUVA444P12;
+    NotchLCContext* s = avctx->priv_data;
+
+    if (s->out_notch) {
+        avctx->pix_fmt = AV_PIX_FMT_NOTCHLC;
+    }
+    else {
+        avctx->pix_fmt = AV_PIX_FMT_YUVA444P12LE;
+    }
     avctx->color_range = AVCOL_RANGE_JPEG;
     avctx->colorspace = AVCOL_SPC_RGB;
     avctx->color_primaries = AVCOL_PRI_BT709;
@@ -460,6 +471,20 @@ static int decode_blocks(AVCodecContext *avctx, AVFrame *p,
     return 0;
 }
 
+struct Header
+{
+    unsigned int TextureSizeX;
+    unsigned int TextureSizeY;
+    unsigned int ChromaOffsetDataOffset;
+    unsigned int LumaControlDataOffset;
+    unsigned int AlphaControlWordOffset;
+    unsigned int ChromaDataOffset;
+    unsigned int LumaBitfieldDataCount;
+    unsigned int ChromaDataCount;
+    unsigned int AlphaDataCount;
+    unsigned int TotalSize;
+};
+
 static int decode_frame(AVCodecContext *avctx, AVFrame *p,
                         int *got_frame, AVPacket *avpkt)
 {
@@ -511,13 +536,28 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *p,
         bytestream2_init(gb, s->uncompressed_buffer, uncompressed_size);
     }
 
-    ret = decode_blocks(avctx, p, uncompressed_size);
-    if (ret < 0)
-        return ret;
+    struct Header* header = (struct Header*)s->uncompressed_buffer;
+    if (header->TextureSizeX != avctx->width || header->TextureSizeY != avctx->height) {
+        return -1;
+    }
 
+    if (!s->out_notch) {
+        ret = decode_blocks(avctx, p, uncompressed_size);
+        if (ret < 0)
+            return ret;
+    }
+    else {
+        p->buf[0] = av_buffer_alloc(uncompressed_size);
+        p->buf[1] = av_buffer_alloc(sizeof(uint32_t));
+        p->data[0] = p->buf[0]->data;
+        p->data[1] = p->buf[1]->data;        
+        memcpy(p->data[0], s->uncompressed_buffer, uncompressed_size);
+    }
+    
     p->pict_type = AV_PICTURE_TYPE_I;
     p->key_frame = 1;
-
+    unsigned* write_size = (unsigned*)(p->data[1]);
+    *write_size = uncompressed_size;
     *got_frame = 1;
 
     return avpkt->size;
@@ -535,15 +575,34 @@ static av_cold int decode_end(AVCodecContext *avctx)
     return 0;
 }
 
+#define OFFSET(x) offsetof(NotchLCContext, x)
+#define VD AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_DECODING_PARAM
+
+/**
+* Libav could not decompress NotchLC with no alpha: Optimal, Verygood, Good
+*/
+const AVOption notch_options[] = {
+    { "notch","1: get notch compressed buffer, 0: use libav decompressing software implementation", OFFSET(out_notch), AV_OPT_TYPE_INT64, {.i64 = 0 }, 0, 1, VD},
+    { NULL }
+};
+
+static const AVClass notchlc_class = {
+    .class_name = "notchlc",
+    .item_name = av_default_item_name,
+    .option = notch_options,
+    .version = LIBAVUTIL_VERSION_INT,
+};
+
 const FFCodec ff_notchlc_decoder = {
     .p.name           = "notchlc",
     .p.long_name      = NULL_IF_CONFIG_SMALL("NotchLC"),
     .p.type           = AVMEDIA_TYPE_VIDEO,
     .p.id             = AV_CODEC_ID_NOTCHLC,
+    .p.priv_class     = &notchlc_class,
     .priv_data_size   = sizeof(NotchLCContext),
     .init             = decode_init,
     .close            = decode_end,
     FF_CODEC_DECODE_CB(decode_frame),
-    .p.capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS,
+    .p.capabilities   = AV_CODEC_CAP_FRAME_THREADS,
     .caps_internal    = FF_CODEC_CAP_INIT_THREADSAFE,
 };
