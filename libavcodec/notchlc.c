@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 #define BITSTREAM_READER_LE
 #include "libavutil/intreadwrite.h"
@@ -471,6 +472,186 @@ static int decode_blocks(AVCodecContext *avctx, AVFrame *p,
     return 0;
 }
 
+
+static uint32_t get_u32_component(uint32_t v, char com) {
+    v <<= 16;
+    v >>= 24;
+    return v;
+}
+
+static uint32_t GetNumBitsFromControlWord(uint32_t controlWord)
+{
+    uint32_t numBitsPerRow = controlWord >> 24U;
+    uint32_t numBitsRow0 = (numBitsPerRow) & 3U;
+    uint32_t numBitsRow1 = (numBitsPerRow >> 2U) & 3U;
+    uint32_t numBitsRow2 = (numBitsPerRow >> 4U) & 3U;
+    uint32_t numBitsRow3 = (numBitsPerRow >> 6U) & 3U;
+    numBitsRow0 += 1U;
+    numBitsRow1 += 1U;
+    numBitsRow2 += 1U;
+    numBitsRow3 += 1U;
+
+    uint32_t numBitsTotal = (numBitsRow0 + numBitsRow1 + numBitsRow2 + numBitsRow3) * 4U;
+
+    return numBitsTotal;
+}
+
+static int imageLoad(const uint32_t* data, uint32_t index, char com) {
+    return get_u32_component(data[index],com);
+}
+
+static void imageStore(uint64_t* data, uint32_t x, uint64_t rg) {
+    data[x] = rg;
+}
+
+typedef struct NotchBitstreamFrameData {
+    uint32_t Width;//0
+    uint32_t Height;//1
+    uint32_t ChromaOffsetDataOffset;//2
+    uint32_t LumaControlDataOffset;//3
+    uint32_t AlphaControlWordOffset;//4
+    uint32_t ChromaDataOffset;//5
+    uint32_t LumaBitfieldDataCount;//6
+    uint32_t ChromaDataCount;//7
+    uint32_t AlphaDataCount;//8
+    uint32_t TotalSize;//9 decompressBufferSize
+
+    uint32_t bw;
+    uint32_t bh;
+    uint32_t cw0;
+    uint32_t ch0;
+    uint32_t useAlpha;
+    uint32_t rowDataOffset;
+    uint32_t chromaBlockDataOffset;
+    uint32_t lumaControlDataOffset;
+    uint32_t alphaControlWordOffset;
+    uint32_t chromaDataOffset;
+    uint32_t* buffer;
+    uint64_t* buffer_out;
+} NotchBitstreamFrameData;
+
+static int notch_read_bitfield(struct NotchBitstreamFrameData frame_data) {
+    //layout(local_size_x = 64) in;
+    uint32_t w = frame_data.Width;
+    uint32_t h = frame_data.Height;
+    uint32_t ChromaDataCount = get_u32_component(frame_data.ChromaDataCount,'r');
+    uint32_t AlphaDataCount = get_u32_component(frame_data.AlphaDataCount, 'r');
+    uint32_t ChromaDataOffset = frame_data.chromaDataOffset;
+    uint32_t NumBlocksY = frame_data.bh;
+    uint32_t NumBlocksX = frame_data.bw;
+    uint32_t LumaRowDataOffset = frame_data.rowDataOffset;
+    uint32_t LumaControlDataOffset = frame_data.lumaControlDataOffset;
+    uint32_t lumaBitfieldDataOffset = ChromaDataOffset + ChromaDataCount + AlphaDataCount;
+    uint32_t* OutputByteStream = frame_data.buffer;
+    uint64_t* RWBitfieldTexture = frame_data.buffer_out;
+
+    printf("%d %d\n", lumaBitfieldDataOffset, 0);
+
+    for (uint32_t row = 0; row < NumBlocksY; ++row) {
+        uint32_t offset = 0;
+        uint32_t rowOffset = imageLoad(OutputByteStream, LumaRowDataOffset + row,'r');
+
+        for (uint32_t i = 0; i < NumBlocksX; ++i)
+        {
+            uint32_t pos_x = i;
+            uint32_t pos_y = row;
+
+            uint32_t controlWordReadPos = pos_x + pos_y * NumBlocksX;
+            uint32_t controlWord = imageLoad(OutputByteStream, controlWordReadPos + LumaControlDataOffset,'r');
+
+            uint32_t numBitsTotal = GetNumBitsFromControlWord(controlWord);
+            uint32_t outputBitPos = (rowOffset * 8U) + offset;
+
+            // write bits
+            uint32_t outputWordPos = outputBitPos / 32U;
+            uint32_t remainderShift = outputBitPos & 31U;
+
+            outputWordPos += lumaBitfieldDataOffset;
+
+            uint32_t bitfield_x = imageLoad(OutputByteStream, outputWordPos,'r') >> remainderShift;
+            uint32_t bitfield_y = imageLoad(OutputByteStream, outputWordPos + 1,'r') >> remainderShift;
+
+            if (remainderShift != 0) {
+                bitfield_x |= imageLoad(OutputByteStream, outputWordPos + 1U,'r') << (32U - remainderShift);
+                bitfield_y |= imageLoad(OutputByteStream, outputWordPos + 2U,'r') << (32U - remainderShift);
+            }
+            //x,y|r,g
+            uint64_t write_data = bitfield_y;
+            write_data <<= 32;
+            write_data |= bitfield_x;
+            imageStore(RWBitfieldTexture, pos_x + NumBlocksX * pos_y, write_data);
+
+            offset += numBitsTotal;
+        }
+    }
+    return lumaBitfieldDataOffset;
+}
+
+
+
+static int decode_notch2(AVCodecContext* avctx, AVFrame* p,
+    unsigned uncompressed_size) {
+    NotchLCContext* s = avctx->priv_data;
+    GetByteContext rgb, dgb, * gb = &s->gb;
+    GetBitContext bit;
+    int ylinesize, ulinesize, vlinesize, alinesize;
+    uint16_t* dsty, * dstu, * dstv, * dsta;
+    int ret;    
+
+    struct NotchBitstreamFrameData frame_data;
+    memset(&frame_data, 0,sizeof(NotchBitstreamFrameData));
+
+    frame_data.Width = bytestream2_get_le32(gb);//0
+    frame_data.Height = bytestream2_get_le32(gb);//0
+
+    s->texture_size_x = frame_data.Width;
+    s->texture_size_y = frame_data.Height;
+    
+
+    ret = ff_set_dimensions(avctx, s->texture_size_x, s->texture_size_y);
+    if (ret < 0)
+        return ret;
+
+    frame_data.ChromaOffsetDataOffset = bytestream2_get_le32(gb);//2
+    frame_data.LumaControlDataOffset = bytestream2_get_le32(gb);//3
+    frame_data.AlphaControlWordOffset = bytestream2_get_le32(gb);//4
+    frame_data.ChromaDataOffset = bytestream2_get_le32(gb);//5
+    frame_data.LumaBitfieldDataCount = bytestream2_get_le32(gb);//6
+    frame_data.ChromaDataCount = bytestream2_get_le32(gb);//7
+    frame_data.AlphaDataCount = bytestream2_get_le32(gb);//8
+    frame_data.TotalSize = bytestream2_get_le32(gb);//9 decompressBufferSize
+
+    if (frame_data.TotalSize!= uncompressed_size)
+        return AVERROR_INVALIDDATA;
+
+    //Decompile Shader
+    frame_data.bw = (frame_data.Width + 3) / 4;
+    frame_data.bh = (frame_data.Height + 3) / 4;
+    frame_data.cw0 = (frame_data.Width + 15) / 16;
+    frame_data.ch0 = (frame_data.Height + 15) / 16;
+    frame_data.useAlpha = frame_data.AlphaControlWordOffset != frame_data.ChromaDataOffset ? 1 : 0;
+    frame_data.rowDataOffset = 10;
+    frame_data.chromaBlockDataOffset = frame_data.rowDataOffset + frame_data.bh;
+    frame_data.lumaControlDataOffset = frame_data.chromaBlockDataOffset + (frame_data.cw0 * frame_data.ch0);
+    frame_data.alphaControlWordOffset = frame_data.lumaControlDataOffset + (frame_data.cw0 * frame_data.ch0 * 16);
+    frame_data.chromaDataOffset =
+        frame_data.useAlpha ? (frame_data.alphaControlWordOffset + (frame_data.cw0 * frame_data.ch0 * 2)) : frame_data.alphaControlWordOffset;
+    frame_data.buffer = s->uncompressed_buffer;
+
+    uint64_t* bitfieldTexture = malloc(sizeof(uint64_t) * frame_data.bw * frame_data.bh);
+    memset(bitfieldTexture,0, sizeof(uint64_t)*frame_data.bw * frame_data.bh);
+    frame_data.buffer_out = bitfieldTexture;
+    if (notch_read_bitfield(frame_data) < 0) {
+        return 0;
+    }
+
+    av_buffer_unref(&(p->buf[0]));
+    p->buf[0] = av_buffer_alloc(sizeof(uint64_t) * frame_data.bw * frame_data.bh);
+    memcpy(p->buf[0]->data, bitfieldTexture, sizeof(uint64_t) * frame_data.bw * frame_data.bh);
+    free(bitfieldTexture);
+    return 0;
+}
+
 struct Header
 {
     unsigned int TextureSizeX;
@@ -542,7 +723,8 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *p,
     }
 
     if (!s->out_notch) {
-        ret = decode_blocks(avctx, p, uncompressed_size);
+        ret = decode_notch2(avctx, p, uncompressed_size);
+        //ret = decode_blocks(avctx, p, uncompressed_size);
         if (ret < 0)
             return ret;
     }
@@ -552,12 +734,16 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *p,
         p->data[0] = p->buf[0]->data;
         p->data[1] = p->buf[1]->data;        
         memcpy(p->data[0], s->uncompressed_buffer, uncompressed_size);
+        unsigned* write_size = (unsigned*)(p->data[1]);
+        *write_size = uncompressed_size;
     }
     
+    /*av_buffer_unref(&(p->buf[0]));
+    p->buf[0] = av_buffer_alloc(uncompressed_size);
+    memcpy(p->buf[0]->data, s->uncompressed_buffer, uncompressed_size);*/
+
     p->pict_type = AV_PICTURE_TYPE_I;
     p->key_frame = 1;
-    unsigned* write_size = (unsigned*)(p->data[1]);
-    *write_size = uncompressed_size;
     *got_frame = 1;
 
     return avpkt->size;
