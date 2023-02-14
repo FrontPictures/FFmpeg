@@ -439,7 +439,7 @@ static int png_decode_idat(PNGDecContext *s, GetByteContext *gb,
     /* decode one line if possible */
     while (zstream->avail_in > 0) {
         ret = inflate(zstream, Z_PARTIAL_FLUSH);
-        if (ret != Z_OK && ret != Z_STREAM_END) {
+        if (ret != Z_OK && ret != Z_STREAM_END && ret != Z_DATA_ERROR) {
             av_log(s->avctx, AV_LOG_ERROR, "inflate returned error %d\n", ret);
             return AVERROR_EXTERNAL;
         }
