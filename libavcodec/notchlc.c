@@ -541,24 +541,20 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *p,
         return -1;
     }
 
-    if (!s->out_notch) {
-        ret = decode_blocks(avctx, p, uncompressed_size);
-        if (ret < 0)
-            return ret;
+    ret = ff_set_dimensions(avctx, header->TextureSizeX, header->TextureSizeY);
+    if (ret < 0)
+        return ret;
+
+    if (header->AlphaControlWordOffset != header->ChromaDataOffset) {
+        avctx->pix_fmt = AV_PIX_FMT_RGBA;
     }
     else {
-        p->buf[0] = av_buffer_alloc(uncompressed_size);
-        p->buf[1] = av_buffer_alloc(sizeof(uint32_t));
-        p->data[0] = p->buf[0]->data;
-        p->data[1] = p->buf[1]->data;        
-        memcpy(p->data[0], s->uncompressed_buffer, uncompressed_size);
+        avctx->pix_fmt = AV_PIX_FMT_RGB0;
     }
     
     p->pict_type = AV_PICTURE_TYPE_I;
-    p->key_frame = 1;
-    unsigned* write_size = (unsigned*)(p->data[1]);
-    *write_size = uncompressed_size;
-    *got_frame = 1;
+    p->key_frame = 1;    
+    *got_frame = 0;
 
     return avpkt->size;
 }
@@ -603,6 +599,6 @@ const FFCodec ff_notchlc_decoder = {
     .init             = decode_init,
     .close            = decode_end,
     FF_CODEC_DECODE_CB(decode_frame),
-    .p.capabilities   = AV_CODEC_CAP_FRAME_THREADS,
+    .p.capabilities   = AV_CODEC_CAP_FRAME_THREADS | AV_CODEC_CAP_CHANNEL_CONF,
     .caps_internal    = FF_CODEC_CAP_INIT_THREADSAFE,
 };
